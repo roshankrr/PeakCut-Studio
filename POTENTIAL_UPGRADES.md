@@ -31,6 +31,9 @@ The following upgrades outline the path from a manual web clipping tool into a f
 ## ✅ STAGE 4 COMPLETE — 1-Click Direct YouTube Shorts Publishing
 > Built: `src/lib/youtube.ts`, `/api/auth/youtube/url`, `/api/auth/youtube/callback`, `/api/auth/youtube/status`, and `/api/youtube/publish`. Added 1-click modal `YouTubePublishModal.tsx` on every ClipCard with prefilled AI metadata, visibility controls (Public, Unlisted, Draft), and scheduled release date support. Connected with `CLIENT_ID` and `CLIENT_SECRET` in `.env`. TypeScript 0 errors.
 
+## ✅ STAGE 5 COMPLETE — Deep Harvest & "Get More Clips" Engine
+> Built: Non-overlapping secondary scene discovery engine in `findPeakMoments` & `generateMoreClips` (`/api/clips/more`). Added 1-click `Get More Clips (+3 Next Moments)` button on both active jobs and saved library videos to discover secondary/conversational viral moments (70–88 score tier) without re-downloading or re-transcribing. Added initial output clip count selector (3, 5, or 8 clips). TypeScript 0 errors.
+
 ---
 
 ## Core Architecture Upgrade: Modular Studio Templates Suite

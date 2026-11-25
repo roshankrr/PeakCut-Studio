@@ -26,13 +26,21 @@ export const CONFIG = {
   CLIPS_DIR: path.join(process.cwd(), 'storage', 'clips'),
   AUDIO_DIR: path.join(process.cwd(), 'storage', 'audio'),
   SUBS_DIR: path.join(process.cwd(), 'storage', 'subtitles'),
+  TRANSCRIPTS_DIR: path.join(process.cwd(), 'storage', 'transcripts'),
+  LOGOS_DIR: path.join(process.cwd(), 'storage', 'logos'),
   SETTINGS_FILE: path.join(process.cwd(), 'storage', 'settings.json'),
+  LEARNING_FILE: path.join(process.cwd(), 'storage', 'learning_memory.json'),
+  INSTAGRAM_AUTH_FILE: path.join(process.cwd(), 'storage', 'instagram_auth.json'),
   DB_FILE: path.join(process.cwd(), 'storage', 'jobs.json'),
 };
 
 export interface AppSettings {
   groqApiKey?: string;
   geminiApiKey?: string;
+  youtubeClientId?: string;
+  youtubeClientSecret?: string;
+  instagramAppId?: string;
+  instagramAppSecret?: string;
 }
 
 export function getSettings(): AppSettings {

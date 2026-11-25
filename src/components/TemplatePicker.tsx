@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Zap, Swords, Gamepad2 } from 'lucide-react';
+import { Zap, Swords, Gamepad2, FastForward, Award } from 'lucide-react';
 import { TemplateId } from '@/lib/types';
 
 interface Template {
@@ -41,6 +41,24 @@ const TEMPLATES: Template[] = [
     description:
       'Preserves streamer facecam and core gameplay simultaneously in a balanced 9:14 vertical format without cutting into room or UI.',
   },
+  {
+    id: 'stream-stepper',
+    icon: FastForward,
+    badge: '4-6h Long VODs',
+    title: 'Stream Stepper',
+    subtitle: 'Chunk-by-Chunk Long Clipper',
+    description:
+      'For 3–6+ hour VODs & podcasts. Clips 20-30m chunks on demand without downloading the full massive file. Review Part 1, then click Next Chunk!',
+  },
+  {
+    id: 'brand-campaign',
+    icon: Award,
+    badge: 'Campaign & Sponsor',
+    title: 'Campaign Studio',
+    subtitle: 'Logo Watermark & Brand Placement',
+    description:
+      'Upload your sponsor or brand logo and place it anywhere on your vertical clips (bottom-left, bottom-right, corners, or custom coordinates).',
+  },
 ];
 
 interface TemplatePickerProps {
@@ -60,7 +78,7 @@ export default function TemplatePicker({ selected, onChange }: TemplatePickerPro
         </span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
         {TEMPLATES.map((tpl) => {
           const Icon = tpl.icon;
           const isSelected = selected === tpl.id;

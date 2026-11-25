@@ -1,15 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Settings, Scissors, Trash2, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Settings, Scissors, Trash2, CheckCircle2, ShieldCheck, Brain } from 'lucide-react';
 
 interface NavbarProps {
   onOpenSettings: () => void;
+  onOpenLearning?: () => void;
   hasApiKey: boolean;
   onStorageCleared?: () => void;
 }
 
-export default function Navbar({ onOpenSettings, hasApiKey, onStorageCleared }: NavbarProps) {
+export default function Navbar({ onOpenSettings, onOpenLearning, hasApiKey, onStorageCleared }: NavbarProps) {
   const [clearing, setClearing] = useState(false);
   const [clearedNotice, setClearedNotice] = useState(false);
 
@@ -84,6 +85,18 @@ export default function Navbar({ onOpenSettings, hasApiKey, onStorageCleared }: 
               </>
             )}
           </button>
+
+          {/* AI Self-Improvement Memory Button */}
+          {onOpenLearning && (
+            <button
+              onClick={onOpenLearning}
+              title="View self-improving AI prompt rules and feedback memory"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/[0.03] hover:bg-brand/10 hover:border-brand/40 text-stone-300 hover:text-brand border border-white/[0.08] transition-all cursor-pointer"
+            >
+              <Brain className="w-3.5 h-3.5 text-brand" />
+              <span className="hidden sm:inline">AI Memory</span>
+            </button>
+          )}
 
           {/* Settings Button */}
           <button

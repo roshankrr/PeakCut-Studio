@@ -17,7 +17,7 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import { CONFIG } from '@/lib/config';
 import { getJob, updateJob } from '@/lib/storage';
-import { FrameLayout, TextOverlay } from '@/lib/types';
+import { FrameLayout, TextOverlay, LogoOverlay } from '@/lib/types';
 import { stripEmojis, escapeDrawText } from '@/lib/versusRenderer';
 
 export interface RerenderRequestBody {
@@ -31,6 +31,7 @@ export interface RerenderRequestBody {
   speed?: number;               // 1.0, 1.1, 1.25
   customHook?: string;
   textOverlays?: TextOverlay[];
+  logoOverlay?: LogoOverlay | null;
 }
 
 function runFFmpeg(args: string[]): Promise<void> {
@@ -184,6 +185,10 @@ export async function POST(req: NextRequest) {
 
     const finalFilterString = vFilters.join(',');
 
+    // Logo Overlay handling
+    const logoOverlay = body.logoOverlay !== undefined ? body.logoOverlay : clip.logoOverlay;
+    const hasLogo = Boolean(logoOverlay?.path && fs.existsSync(logoOverlay.path));
+
     // Audio filter for speed
     const aFilters: string[] = [];
     if (speed !== 1.0) {
@@ -202,11 +207,52 @@ export async function POST(req: NextRequest) {
 
     ffmpegArgs.push('-i', sourceVideo);
 
+    if (hasLogo && logoOverlay?.path) {
+      ffmpegArgs.push('-i', logoOverlay.path);
+    }
+
     if (effectiveDuration > 0) {
       ffmpegArgs.push('-t', effectiveDuration.toFixed(2));
     }
 
-    if (finalFilterString) {
+    if (hasLogo && logoOverlay?.path) {
+      const widthPct = logoOverlay.widthPercent || 18;
+      const targetWidth = Math.max(60, Math.min(480, Math.round(1080 * (widthPct / 100))));
+      const opacity = typeof logoOverlay.opacity === 'number'
+        ? Math.max(0.1, Math.min(1.0, logoOverlay.opacity))
+        : 1.0;
+
+      let overlayExpr = '50:H-h-110';
+      const pos = logoOverlay.position || 'bottom-left';
+
+      if (pos === 'bottom-left') {
+        overlayExpr = '50:H-h-110';
+      } else if (pos === 'bottom-right') {
+        overlayExpr = 'W-w-50:H-h-110';
+      } else if (pos === 'top-left') {
+        overlayExpr = '50:90';
+      } else if (pos === 'top-right') {
+        overlayExpr = 'W-w-50:90';
+      } else if (pos === 'top-center') {
+        overlayExpr = '(W-w)/2:90';
+      } else if (pos === 'bottom-center') {
+        overlayExpr = '(W-w)/2:H-h-110';
+      } else if (pos === 'center') {
+        overlayExpr = '(W-w)/2:(H-h)/2';
+      } else if (pos === 'custom' && logoOverlay.xPercent !== undefined && logoOverlay.yPercent !== undefined) {
+        const xClamped = Math.max(2, Math.min(95, logoOverlay.xPercent));
+        const yClamped = Math.max(2, Math.min(95, logoOverlay.yPercent));
+        overlayExpr = `(W-w)*${(xClamped / 100).toFixed(3)}:(H-h)*${(yClamped / 100).toFixed(3)}`;
+      }
+
+      const complexFilter = [
+        `[0:v]${finalFilterString}[v_base]`,
+        `[1:v]scale=${targetWidth}:-1:flags=lanczos,format=rgba,colorchannelmixer=aa=${opacity}[logo_scaled]`,
+        `[v_base][logo_scaled]overlay=${overlayExpr}:eof_action=repeat[v_out]`,
+      ].join(';');
+
+      ffmpegArgs.push('-filter_complex', complexFilter, '-map', '[v_out]', '-map', '0:a?');
+    } else if (finalFilterString) {
       ffmpegArgs.push('-vf', finalFilterString);
     }
 
@@ -237,6 +283,7 @@ export async function POST(req: NextRequest) {
       hook: textOverlays?.find((o) => o.id === 'hook' || o.id === 'topLabel')?.text || body.customHook || clip.hook,
       layout: layout as FrameLayout,
       overlays: textOverlays || clip.overlays,
+      logoOverlay: hasLogo && logoOverlay ? logoOverlay : (body.logoOverlay === null ? undefined : clip.logoOverlay),
     };
 
     job.clips[clipIndex] = updatedClip;

@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { CONFIG } from './config';
-import { FrameLayout } from './types';
+import { FrameLayout, LogoOverlay } from './types';
 
 export interface RenderClipOptions {
   sourceVideoPath: string;
@@ -11,6 +11,7 @@ export interface RenderClipOptions {
   subtitlePath?: string;
   layout: FrameLayout;
   outputClipPath: string;
+  logoOverlay?: LogoOverlay;
 }
 
 export async function renderVerticalClip({
@@ -20,6 +21,7 @@ export async function renderVerticalClip({
   subtitlePath,
   layout,
   outputClipPath,
+  logoOverlay,
 }: RenderClipOptions): Promise<string> {
   const duration = Math.max(1, endTime - startTime);
 
@@ -51,21 +53,72 @@ export async function renderVerticalClip({
     ].join(';');
   }
 
+  const hasLogo = Boolean(
+    logoOverlay?.path && fs.existsSync(logoOverlay.path)
+  );
+
   // If subtitles are provided, burn them onto the [base] layer
+  let intermediateFilter = '[base]';
   if (subtitlePath && fs.existsSync(subtitlePath)) {
     // Escape path for ffmpeg filter: escape colons and backslashes
     const escapedSubPath = subtitlePath.replace(/\\/g, '/').replace(/:/g, '\\:');
-    filterString += `;[base]subtitles=${escapedSubPath}[v]`;
+    filterString += `;[base]subtitles=${escapedSubPath}[v_subbed]`;
+    intermediateFilter = '[v_subbed]';
+  }
+
+  // If logo overlay is provided, scale & overlay onto video
+  if (hasLogo && logoOverlay?.path) {
+    const widthPct = logoOverlay.widthPercent || 18;
+    const targetWidth = Math.max(60, Math.min(480, Math.round(1080 * (widthPct / 100))));
+    const opacity = typeof logoOverlay.opacity === 'number'
+      ? Math.max(0.1, Math.min(1.0, logoOverlay.opacity))
+      : 1.0;
+
+    filterString += `;[1:v]scale=${targetWidth}:-1:flags=lanczos,format=rgba,colorchannelmixer=aa=${opacity}[logo_scaled]`;
+
+    let overlayExpr = '50:H-h-110';
+    const pos = logoOverlay.position || 'bottom-left';
+
+    if (pos === 'bottom-left') {
+      overlayExpr = '50:H-h-110';
+    } else if (pos === 'bottom-right') {
+      overlayExpr = 'W-w-50:H-h-110';
+    } else if (pos === 'top-left') {
+      overlayExpr = '50:90';
+    } else if (pos === 'top-right') {
+      overlayExpr = 'W-w-50:90';
+    } else if (pos === 'top-center') {
+      overlayExpr = '(W-w)/2:90';
+    } else if (pos === 'bottom-center') {
+      overlayExpr = '(W-w)/2:H-h-110';
+    } else if (pos === 'center') {
+      overlayExpr = '(W-w)/2:(H-h)/2';
+    } else if (pos === 'custom' && logoOverlay.xPercent !== undefined && logoOverlay.yPercent !== undefined) {
+      const xClamped = Math.max(2, Math.min(95, logoOverlay.xPercent));
+      const yClamped = Math.max(2, Math.min(95, logoOverlay.yPercent));
+      overlayExpr = `(W-w)*${(xClamped / 100).toFixed(3)}:(H-h)*${(yClamped / 100).toFixed(3)}`;
+    }
+
+    filterString += `;${intermediateFilter}[logo_scaled]overlay=${overlayExpr}:eof_action=repeat[v]`;
   } else {
-    filterString += `;[base]null[v]`;
+    filterString += intermediateFilter === '[v_subbed]' ? `;[v_subbed]null[v]` : `;[base]null[v]`;
   }
 
   const args = [
     '-y',
     '-ss',
     startTime.toFixed(2),
+    '-t',
+    duration.toFixed(2),
     '-i',
     sourceVideoPath,
+  ];
+
+  if (hasLogo && logoOverlay?.path) {
+    args.push('-i', logoOverlay.path);
+  }
+
+  args.push(
     '-t',
     duration.toFixed(2),
     '-filter_complex',
@@ -86,8 +139,8 @@ export async function renderVerticalClip({
     '128k',
     '-movflags',
     '+faststart',
-    outputClipPath,
-  ];
+    outputClipPath
+  );
 
   await new Promise<void>((resolve, reject) => {
     const proc = spawn(CONFIG.BIN_FFMPEG, args);

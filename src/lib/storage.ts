@@ -11,6 +11,8 @@ export function initStorage() {
     CONFIG.CLIPS_DIR,
     CONFIG.AUDIO_DIR,
     CONFIG.SUBS_DIR,
+    CONFIG.TRANSCRIPTS_DIR,
+    CONFIG.LOGOS_DIR,
   ];
   for (const d of dirs) {
     if (!fs.existsSync(d)) {
@@ -53,10 +55,38 @@ export function updateJob(id: string, updates: Partial<Job>): Job | undefined {
   const idx = jobs.findIndex((j) => j.id === id);
   if (idx >= 0) {
     jobs[idx] = { ...jobs[idx], ...updates };
+    if ('error' in updates && updates.error === undefined) {
+      delete jobs[idx].error;
+    }
     fs.writeFileSync(CONFIG.DB_FILE, JSON.stringify(jobs, null, 2), "utf-8");
     return jobs[idx];
   }
   return undefined;
+}
+
+export function updateClipFeedback(
+  clipId: string,
+  feedback: 'like' | 'dislike',
+  note?: string
+): boolean {
+  initStorage();
+  const jobs = getAllJobs();
+  let found = false;
+  for (const job of jobs) {
+    if (job.clips && Array.isArray(job.clips)) {
+      const clip = job.clips.find((c) => c.id === clipId);
+      if (clip) {
+        clip.feedback = feedback;
+        clip.feedbackNote = note;
+        found = true;
+        break;
+      }
+    }
+  }
+  if (found) {
+    fs.writeFileSync(CONFIG.DB_FILE, JSON.stringify(jobs, null, 2), "utf-8");
+  }
+  return found;
 }
 
 /**

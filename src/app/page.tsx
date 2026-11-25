@@ -7,15 +7,20 @@ import UrlInputForm from '@/components/UrlInputForm';
 import ProgressStepper from '@/components/ProgressStepper';
 import ClipCard from '@/components/ClipCard';
 import SettingsModal from '@/components/SettingsModal';
+import LearningModal from '@/components/LearningModal';
+import StreamStepperPanel from '@/components/StreamStepperPanel';
 import { Job, CaptionStyle, FrameLayout, TemplateId } from '@/lib/types';
-import { Sparkles, Flame, Film, Trash2, Cpu, Zap, Eye, Sliders } from 'lucide-react';
+import { Sparkles, Flame, Film, Trash2, Cpu, Zap, Eye, Sliders, Loader2, Plus, MessageSquare } from 'lucide-react';
 
 export default function HomePage() {
   const [activeJob, setActiveJob] = useState<Job | null>(null);
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLearningOpen, setIsLearningOpen] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [template, setTemplate] = useState<TemplateId>('viral-clipper');
+  const [discoveringMoreId, setDiscoveringMoreId] = useState<string | null>(null);
+  const [partFilter, setPartFilter] = useState<number | null>(null);
 
   useEffect(() => {
     checkSettings();
@@ -67,7 +72,13 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [activeJob]);
 
-  async function handleStartUrl(url: string, captionStyle: CaptionStyle, frameLayout: FrameLayout) {
+  async function handleStartUrl(
+    url: string,
+    captionStyle: CaptionStyle,
+    frameLayout: FrameLayout,
+    clipCount: number = 3,
+    userPrompt?: string
+  ) {
     if (!hasApiKey) {
       setIsSettingsOpen(true);
       return;
@@ -76,7 +87,13 @@ export default function HomePage() {
       const res = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, captionStyle, frameLayout }),
+        body: JSON.stringify({
+          url,
+          captionStyle,
+          frameLayout,
+          clipCount,
+          userPrompt: userPrompt?.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (data.job) setActiveJob(data.job);
@@ -87,7 +104,13 @@ export default function HomePage() {
     }
   }
 
-  async function handleStartFile(file: File, captionStyle: CaptionStyle, frameLayout: FrameLayout) {
+  async function handleStartFile(
+    file: File,
+    captionStyle: CaptionStyle,
+    frameLayout: FrameLayout,
+    clipCount: number = 3,
+    userPrompt?: string
+  ) {
     if (!hasApiKey) {
       setIsSettingsOpen(true);
       return;
@@ -97,6 +120,10 @@ export default function HomePage() {
       formData.append('file', file);
       formData.append('captionStyle', captionStyle);
       formData.append('frameLayout', frameLayout);
+      formData.append('clipCount', String(clipCount));
+      if (userPrompt?.trim()) {
+        formData.append('userPrompt', userPrompt.trim());
+      }
       const res = await fetch('/api/process', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.job) setActiveJob(data.job);
@@ -104,6 +131,28 @@ export default function HomePage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to start file upload';
       alert(msg);
+    }
+  }
+
+  async function handleDiscoverMoreClips(jobId: string) {
+    setDiscoveringMoreId(jobId);
+    try {
+      const res = await fetch('/api/clips/more', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId, count: 3 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start discovering more clips');
+
+      if (data.job) {
+        setActiveJob(data.job);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(msg);
+    } finally {
+      setDiscoveringMoreId(null);
     }
   }
 
@@ -128,6 +177,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-[#080A0F] text-stone-100 flex flex-col font-sans selection:bg-brand selection:text-black">
       <Navbar
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenLearning={() => setIsLearningOpen(true)}
         hasApiKey={hasApiKey}
         onStorageCleared={() => {
           setActiveJob(null);
@@ -207,6 +257,16 @@ export default function HomePage() {
           </section>
         )}
 
+        {/* ── Stream Stepper Controller (Chunk-by-Chunk 4–6h Mode) ───────── */}
+        {activeJob && (activeJob.templateId === 'stream-stepper' || activeJob.stepper) && (
+          <StreamStepperPanel
+            job={activeJob}
+            onJobUpdated={(j) => setActiveJob(j)}
+            selectedPartFilter={partFilter}
+            onSelectPartFilter={setPartFilter}
+          />
+        )}
+
         {/* ── Active Job Clips ─────────────────────────────────────────── */}
         {activeJob && activeJob.status === 'completed' && activeJob.clips.length > 0 && (
           <section className="space-y-6">
@@ -214,22 +274,56 @@ export default function HomePage() {
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-brand" />
-                  <span>Ready Clips ({activeJob.clips.length})</span>
+                  <span>
+                    Ready Clips ({partFilter ? `${activeJob.clips.filter((c) => (c.partNumber || 1) === partFilter).length} in Part ${partFilter}` : activeJob.clips.length})
+                  </span>
                 </h3>
                 <p className="text-xs text-stone-400 mt-0.5">
                   Reframed to 9:16 with animated subtitles &amp; hook headlines. Ready for TikTok, Reels &amp; Shorts.
                 </p>
+                {activeJob.userPrompt && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-brand/10 border border-brand/25 text-brand text-xs font-medium">
+                    <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                    <span>Cutout topic: &ldquo;{activeJob.userPrompt}&rdquo;</span>
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => handleDeleteJob(activeJob.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-400 hover:text-rose-400 hover:bg-rose-500/10 border border-white/[0.08] transition-all cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Remove Video</span>
-              </button>
+              <div className="flex items-center gap-2.5">
+                {!activeJob.stepper && (
+                  <button
+                    type="button"
+                    onClick={() => handleDiscoverMoreClips(activeJob.id)}
+                    disabled={Boolean(discoveringMoreId) || isProcessing}
+                    title="Extract 3 additional non-overlapping moments from the stream with secondary virality scores"
+                    className="btn-primary flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm cursor-pointer disabled:opacity-40"
+                  >
+                    {discoveringMoreId === activeJob.id ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Discovering Moments...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Get More Clips (+3 Next Moments)</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDeleteJob(activeJob.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-400 hover:text-rose-400 hover:bg-rose-500/10 border border-white/[0.08] transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove Video</span>
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
-              {activeJob.clips.map((clip) => (
+              {(partFilter
+                ? activeJob.clips.filter((c) => (c.partNumber || 1) === partFilter)
+                : activeJob.clips
+              ).map((clip) => (
                 <ClipCard
                   key={clip.id}
                   clip={clip}
@@ -271,13 +365,34 @@ export default function HomePage() {
                         {new Date(job.createdAt).toLocaleString()}
                       </span>
                     </div>
-                    <button
-                      onClick={() => handleDeleteJob(job.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-400 hover:text-rose-400 hover:bg-rose-500/10 border border-white/[0.08] transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Video &amp; Storage</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDiscoverMoreClips(job.id)}
+                        disabled={Boolean(discoveringMoreId) || isProcessing}
+                        title="Extract 3 additional non-overlapping moments"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand/10 hover:bg-brand/20 border border-brand/30 text-brand transition-all cursor-pointer disabled:opacity-40"
+                      >
+                        {discoveringMoreId === job.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Discovering...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Get More Clips (+3)</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteJob(job.id)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-400 hover:text-rose-400 hover:bg-rose-500/10 border border-white/[0.08] transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete Video &amp; Storage</span>
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
                     {job.clips.map((clip) => (
@@ -304,6 +419,11 @@ export default function HomePage() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSaved={checkSettings}
+      />
+
+      <LearningModal
+        isOpen={isLearningOpen}
+        onClose={() => setIsLearningOpen(false)}
       />
     </div>
   );

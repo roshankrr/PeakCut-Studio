@@ -22,8 +22,12 @@ import {
   AlignVerticalJustifyStart,
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
+  Award,
+  Image as ImageIcon,
+  Upload,
+  Check,
 } from 'lucide-react';
-import { Clip, FrameLayout, TextOverlay } from '@/lib/types';
+import { Clip, FrameLayout, TextOverlay, LogoOverlay, LogoPosition } from '@/lib/types';
 
 interface EditModePanelProps {
   clip: Clip;
@@ -32,7 +36,7 @@ interface EditModePanelProps {
   onClipUpdated?: (updatedClip: Clip) => void;
 }
 
-type TabKey = 'text' | 'trim' | 'crop' | 'subtitles' | 'speed';
+type TabKey = 'text' | 'branding' | 'trim' | 'crop' | 'subtitles' | 'speed';
 
 function stripEmojis(str: string): string {
   if (!str) return '';
@@ -119,6 +123,12 @@ export default function EditModePanel({
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
     overlays[0]?.id || null
   );
+
+  // ── Logo Overlay State ───────────────────────────────────────────────────────
+  const [logoOverlay, setLogoOverlay] = useState<LogoOverlay | null>(
+    clip.logoOverlay || null
+  );
+  const [isUploadingLogo, setIsUploadingLogo] = useState<boolean>(false);
 
   // ── Editor State ────────────────────────────────────────────────────────────
   const [trimStart, setTrimStart] = useState<number>(0);
@@ -267,6 +277,68 @@ export default function EditModePanel({
     }
   }
 
+  function getLogoPreviewStyle(logo: LogoOverlay): React.CSSProperties {
+    const base: React.CSSProperties = {
+      position: 'absolute',
+      width: `${logo.widthPercent || 18}%`,
+      opacity: logo.opacity ?? 1.0,
+      transition: 'all 0.2s ease',
+    };
+
+    switch (logo.position) {
+      case 'bottom-left':
+        return { ...base, bottom: '13%', left: '6%' };
+      case 'bottom-right':
+        return { ...base, bottom: '13%', right: '6%' };
+      case 'top-left':
+        return { ...base, top: '6%', left: '6%' };
+      case 'top-right':
+        return { ...base, top: '6%', right: '6%' };
+      case 'top-center':
+        return { ...base, top: '6%', left: '50%', transform: 'translateX(-50%)' };
+      case 'bottom-center':
+        return { ...base, bottom: '13%', left: '50%', transform: 'translateX(-50%)' };
+      case 'center':
+        return { ...base, top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+      case 'custom':
+        return {
+          ...base,
+          left: `${logo.xPercent ?? 6}%`,
+          top: `${logo.yPercent ?? 88}%`,
+          transform: 'translate(-50%, -50%)',
+        };
+      default:
+        return { ...base, bottom: '13%', left: '6%' };
+    }
+  }
+
+  async function handleUploadLogoFile(file: File) {
+    setIsUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload-logo', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to upload logo');
+
+      setLogoOverlay((prev) => ({
+        path: data.logoPath,
+        url: data.logoUrl,
+        name: file.name,
+        position: prev?.position || 'bottom-left',
+        widthPercent: prev?.widthPercent || 18,
+        opacity: prev?.opacity ?? 1.0,
+        xPercent: prev?.xPercent ?? 6,
+        yPercent: prev?.yPercent ?? 88,
+      }));
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Logo upload failed');
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  }
+
   // Quick Trim Presets
   function applyTrimPreset(preset: 'all' | 'first15' | 'first30' | 'cut5start') {
     if (preset === 'all') {
@@ -309,6 +381,7 @@ export default function EditModePanel({
           trimEnd,
           speed,
           textOverlays: cleanedOverlays,
+          logoOverlay: logoOverlay || null,
         }),
       });
 
@@ -474,6 +547,25 @@ export default function EditModePanel({
                     </span>
                   </div>
                 </div>
+
+                {/* ── LIVE BRAND LOGO WATERMARK PREVIEW ────────────────────── */}
+                {logoOverlay && (logoOverlay.url || logoOverlay.path) && (
+                  <div
+                    style={getLogoPreviewStyle(logoOverlay)}
+                    className="absolute z-35 pointer-events-none select-none transition-all"
+                  >
+                    <img
+                      src={
+                        logoOverlay.url ||
+                        (logoOverlay.path
+                          ? `/api/logos/${logoOverlay.path.split('/').pop()}`
+                          : '')
+                      }
+                      alt="Brand Logo"
+                      className="w-full h-auto object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -561,6 +653,7 @@ export default function EditModePanel({
             <div className="px-6 pt-4 pb-2 border-b border-stone-800/80 bg-[#12151e] flex items-center gap-2 overflow-x-auto flex-shrink-0">
               {[
                 { id: 'text' as TabKey, label: 'Edit Text & Placements', icon: Type },
+                { id: 'branding' as TabKey, label: 'Logo & Branding', icon: Award },
                 { id: 'trim' as TabKey, label: 'Trim & Timing', icon: Scissors },
                 { id: 'crop' as TabKey, label: 'Framing & Crop', icon: Crop },
                 { id: 'subtitles' as TabKey, label: 'Subtitles & Style', icon: Zap },
@@ -770,6 +863,266 @@ export default function EditModePanel({
                       );
                     })}
                   </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── TAB: LOGO & BRANDING (CAMPAIGN WATERMARK) ────────────────── */}
+              {activeTab === 'branding' && (
+                <div className="space-y-6 max-w-xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-white font-bold text-base flex items-center gap-2">
+                        <Award className="w-4.5 h-4.5 text-brand" />
+                        <span>Brand &amp; Sponsor Logo Watermark</span>
+                      </h3>
+                      <p className="text-xs text-stone-400 mt-1">
+                        Add or reposition a brand logo for this clip. Changes appear live on the video canvas on the left!
+                      </p>
+                    </div>
+                    {logoOverlay && (
+                      <button
+                        type="button"
+                        onClick={() => setLogoOverlay(null)}
+                        className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer bg-rose-500/10 px-3 py-1.5 rounded-xl border border-rose-500/20"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Remove Logo
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Logo Upload Card */}
+                  <div className="p-4 rounded-2xl bg-[#141722] border border-stone-800 space-y-4">
+                    <span className="text-xs font-bold text-stone-300 uppercase tracking-wider block">
+                      1. Brand Logo File
+                    </span>
+
+                    {!logoOverlay?.url && !logoOverlay?.path ? (
+                      <div className="border-2 border-dashed border-brand/40 hover:border-brand rounded-xl p-6 text-center bg-[#0a0d14] relative transition-colors cursor-pointer group">
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) handleUploadLogoFile(e.target.files[0]);
+                          }}
+                          disabled={isUploadingLogo}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="w-10 h-10 rounded-xl bg-brand/10 border border-brand/30 flex items-center justify-center text-brand group-hover:scale-105 transition-transform">
+                            {isUploadingLogo ? (
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                              <ImageIcon className="w-5 h-5" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-white">
+                              {isUploadingLogo ? 'Uploading logo...' : 'Click or drop logo image here'}
+                            </p>
+                            <p className="text-[11px] text-stone-400 mt-0.5">
+                              PNG with transparent background looks cleanest
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 rounded-xl bg-[#0a0d14] border border-brand/40 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-lg bg-black/60 border border-white/10 p-1 flex items-center justify-center overflow-hidden">
+                            <img
+                              src={
+                                logoOverlay.url ||
+                                (logoOverlay.path
+                                  ? `/api/logos/${logoOverlay.path.split('/').pop()}`
+                                  : '')
+                              }
+                              alt="Logo"
+                              className="max-w-full max-h-full object-contain"
+                            />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-white line-clamp-1">
+                              {logoOverlay.name || 'Brand Logo'}
+                            </p>
+                            <p className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5 font-semibold">
+                              <Check className="w-3 h-3" /> Positioned at {logoOverlay.position}
+                            </p>
+                          </div>
+                        </div>
+                        <label className="px-3 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] text-xs font-semibold text-stone-200 border border-white/[0.1] cursor-pointer transition-colors">
+                          Change
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              if (e.target.files?.[0]) handleUploadLogoFile(e.target.files[0]);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Position Selector */}
+                  {logoOverlay && (
+                    <div className="p-4 rounded-2xl bg-[#141722] border border-stone-800 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-300 uppercase tracking-wider block">
+                          2. Screen Placement
+                        </span>
+                        <span className="text-[11px] font-mono text-brand font-bold uppercase">
+                          {logoOverlay.position}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {[
+                          { id: 'bottom-left' as LogoPosition, label: 'Bottom Left', badge: 'Recommended' },
+                          { id: 'bottom-right' as LogoPosition, label: 'Bottom Right' },
+                          { id: 'top-left' as LogoPosition, label: 'Top Left' },
+                          { id: 'top-right' as LogoPosition, label: 'Top Right' },
+                          { id: 'top-center' as LogoPosition, label: 'Top Center' },
+                          { id: 'bottom-center' as LogoPosition, label: 'Bottom Center' },
+                          { id: 'center' as LogoPosition, label: 'Center Watermark' },
+                          { id: 'custom' as LogoPosition, label: 'Custom Pinpoint' },
+                        ].map((pos) => {
+                          const isPicked = logoOverlay.position === pos.id;
+                          return (
+                            <button
+                              key={pos.id}
+                              type="button"
+                              onClick={() =>
+                                setLogoOverlay((prev) => (prev ? { ...prev, position: pos.id } : null))
+                              }
+                              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                isPicked
+                                  ? 'bg-brand/20 border-brand text-white shadow-md shadow-brand/10'
+                                  : 'bg-[#0a0d14] border-stone-800 text-stone-400 hover:border-stone-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={`text-xs font-bold ${isPicked ? 'text-white' : 'text-stone-300'}`}>
+                                  {pos.label}
+                                </span>
+                                {pos.badge && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-brand/25 text-brand">
+                                    {pos.badge}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Custom Sliders */}
+                      {logoOverlay.position === 'custom' && (
+                        <div className="p-3.5 rounded-xl bg-[#0a0d14] border border-white/[0.08] space-y-3">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-stone-400">Horizontal Coordinate (X%):</span>
+                              <span className="font-mono text-brand font-bold">{logoOverlay.xPercent ?? 6}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="2"
+                              max="95"
+                              value={logoOverlay.xPercent ?? 6}
+                              onChange={(e) =>
+                                setLogoOverlay((prev) =>
+                                  prev ? { ...prev, xPercent: Number(e.target.value) } : null
+                                )
+                              }
+                              className="w-full accent-brand cursor-pointer"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-stone-400">Vertical Coordinate (Y%):</span>
+                              <span className="font-mono text-brand font-bold">{logoOverlay.yPercent ?? 88}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="2"
+                              max="95"
+                              value={logoOverlay.yPercent ?? 88}
+                              onChange={(e) =>
+                                setLogoOverlay((prev) =>
+                                  prev ? { ...prev, yPercent: Number(e.target.value) } : null
+                                )
+                              }
+                              className="w-full accent-brand cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Size & Opacity Controls */}
+                  {logoOverlay && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Logo Width */}
+                      <div className="p-4 rounded-2xl bg-[#141722] border border-stone-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-stone-300 uppercase tracking-wider">
+                            Logo Width
+                          </span>
+                          <span className="text-xs font-mono font-bold text-brand">
+                            {logoOverlay.widthPercent || 18}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="8"
+                          max="40"
+                          value={logoOverlay.widthPercent || 18}
+                          onChange={(e) =>
+                            setLogoOverlay((prev) =>
+                              prev ? { ...prev, widthPercent: Number(e.target.value) } : null
+                            )
+                          }
+                          className="w-full accent-brand cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[10px] text-stone-500 font-mono">
+                          <span>Compact (12%)</span>
+                          <span>Standard (18%)</span>
+                          <span>Large (30%)</span>
+                        </div>
+                      </div>
+
+                      {/* Opacity */}
+                      <div className="p-4 rounded-2xl bg-[#141722] border border-stone-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-stone-300 uppercase tracking-wider">
+                            Watermark Opacity
+                          </span>
+                          <span className="text-xs font-mono font-bold text-brand">
+                            {Math.round((logoOverlay.opacity ?? 1.0) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="20"
+                          max="100"
+                          step="5"
+                          value={Math.round((logoOverlay.opacity ?? 1.0) * 100)}
+                          onChange={(e) =>
+                            setLogoOverlay((prev) =>
+                              prev ? { ...prev, opacity: Number(e.target.value) / 100 } : null
+                            )
+                          }
+                          className="w-full accent-brand cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[10px] text-stone-500 font-mono">
+                          <span>Ghosted (40%)</span>
+                          <span>Subtle (85%)</span>
+                          <span>Solid (100%)</span>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
